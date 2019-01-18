@@ -23,7 +23,7 @@ class BackyardFlyer(Drone):
     def __init__(self, connection):
         super().__init__(connection)
         self.target_position = np.array([0.0, 0.0, 0.0])
-        self.all_waypoints = [[5,0,3,0], [5,5,3,0], [0,5,3,0], [0,0,3,0]]
+        self.all_waypoints = [[10,0,3,0], [10,10,3,0], [0,10,3,0], [0,0,3,0]]
         self.in_mission = True
         self.check_state = {}
 
@@ -36,7 +36,7 @@ class BackyardFlyer(Drone):
         self.register_callback(MsgID.LOCAL_POSITION, self.local_position_callback)
         self.register_callback(MsgID.LOCAL_VELOCITY, self.velocity_callback)
         self.register_callback(MsgID.STATE, self.state_callback)
-        #self.register_callback(MsgID.GLOBAL_POSITION, self.global_position_callback)
+       
 		
 
     def local_position_callback(self):
@@ -45,14 +45,19 @@ class BackyardFlyer(Drone):
 
         This triggers when `MsgID.LOCAL_POSITION` is received and self.local_position contains new data
         """
+        if self.flight_state == States.TAKEOFF:
+            if self.target_position[2] - (-1 * self.local_position[2] )< 0.01:
+                self.waypoint_transition()
+        elif self.flight_state == States.WAYPOINT:
+            if self.count < 4:
+                if np.linalg.norm(self.target_position[0:2] - self.local_position[0:2]) < 1.0:
+                    self.waypoint_transition() 
+            else:
+                if np.linalg.norm(self.local_velocity[0:2]) < 1.0:
+                    self.landing_transition()
 
         pass
 
-    def global_position_callback(self):
-        nwp = self.calculate_box()
-        self.cmd_position(nwp[0],nwp[1],nwp[2],nwp[3])
-
-        pass
 		
     def velocity_callback(self):
         """
@@ -78,13 +83,6 @@ class BackyardFlyer(Drone):
         elif self.flight_state == States.ARMING:
             if self.armed:
                 self.takeoff_transition()
-        elif self.flight_state == States.TAKEOFF:
-            self.waypoint_transition()
-        elif self.flight_state == States.WAYPOINT:
-            if self.count == 4:
-                self.landing_transition()
-            else:
-                self.waypoint_transition()
         elif self.flight_state == States.DISARMING:
             if not self.armed:
                 self.manual_transition()
@@ -127,6 +125,7 @@ class BackyardFlyer(Drone):
         target_altitude = 3.0
         self.target_position[2] = target_altitude
         self.takeoff(target_altitude)
+        time.sleep(2)
         self.flight_state = States.TAKEOFF
 
     def waypoint_transition(self):
@@ -137,8 +136,11 @@ class BackyardFlyer(Drone):
         """
         print("waypoint transition")
         nwp = self.calculate_box()
+        self.target_position[0] = nwp[0]
+        self.target_position[1] = nwp[1]
+        self.target_position[2] = nwp[2]
         self.cmd_position(nwp[0],nwp[1],nwp[2],nwp[3])
-        time.sleep(2)
+        #time.sleep(4)
         print("Target Position ["+str(nwp[0])+","+str(nwp[1])+","+str(nwp[2])+","+str(nwp[3])+"]")
         self.flight_state = States.WAYPOINT
 
@@ -201,5 +203,4 @@ if __name__ == "__main__":
     conn = MavlinkConnection('tcp:{0}:{1}'.format(args.host, args.port), threaded=False, PX4=False)
     #conn = WebSocketConnection('ws://{0}:{1}'.format(args.host, args.port))
     drone = BackyardFlyer(conn)
-    time.sleep(2)
     drone.start()
